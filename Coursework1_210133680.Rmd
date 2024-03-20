@@ -1,0 +1,246 @@
+---
+title: "Meta’s Prophet forecasting system"
+subtitle: "Air-Passangers"
+author:
+- name: Roulian Zelo
+date: "15th March 2024"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, echo=FALSE}
+htmltools::img(src = knitr::image_uri("image.png"), 
+               alt = 'image', 
+               style = 'position:absolute; top:0; right:0; padding:10px; width:30%;')
+```
+
+### Loading Prophet package.
+
+```{r}
+library(prophet)
+#or we can use 
+# remotes::install_github('facebook/prophet@*release', subdir='R')
+
+```
+
+#### when I ran both of the packages the following observations were collected:
+
+##### 1- default install:
+
+-   it installed the version that is tagged the latest version.
+-   and it was more stable.
+-   however I had to install two more packages `Rcpp` and `rlang`
+
+##### 2- latest version install from meta:
+
+-   installed the latest version available on GitHub
+-   it includes recent new changes
+-   however it was less stable due to the latest developments.
+
+I have also kept `library()` instead of writing the name of the library in front of any function in that library.
+
+### 1.1.2 General overview: Analysis of AirPassengers
+
+In order to check if the data is a time series data we can use the function `class()`.
+```{r}
+class(AirPassengers)
+# we get ts, therefore we can use the data set. 
+head(AirPassengers)
+
+```
+
+####  Explain what the data Air-passangers shows?
+
+-  This data set contains the monthly totals of international airline passengers from January 1949 to December 1960 from the Box & Jenkins airline data
+- It is also a A monthly time series, in thousands.
+
+#### The purpose of the project `AirPassangers`:
+
+-   for this project the objective was to explore the seasonality of the data allowing the Airline business to understand the trends and develop a new strategies. In other words analysing Seasonal data often shows recurring patterns or fluctuations that occur at regular intervals, such as daily, weekly, monthly, or yearly. and these fluctuations might be driven by factors like weather, holidays, or cultural events.
+
+-   looking at the ts graph above, we can see that there are some obvious seasonal variation every year. There is clear increase/peaks approximately around the middle of every year.
+
+- We can use `Summary()` which provides me with some insights regarding the distribution of the numeric variable, including measures of central tendency , variability. 
+
+
+#### 1.1.3 Statistics overview 
+
+```{r}
+
+summary(AirPassengers)
+```
+
+Looking at the output of the above code we can see the following: from Jan 1949- Dec 1960, the average number of passengers using the airline  is 280. The highest number of passengers in one month was 622 and the minimum number of passengers in one month was 104.
+
+#### 1.1.4 General plot overview to identify any trends and seasonal patterns
+
+```{r}
+plot (AirPassengers, main = "Airline Passengers Over Time", xlab = "Year", ylab = "Number of Passengers" ) 
+```
+
+The overall plot shows a trend and Specifically, a clear peak appears around August and it starts to decline around November.
+
+Also, One interesting side observation in the chart above is that the variations seem to be getting bigger although it initially does not change but it starts to changes over the years. Therefore we can say there is a change in variance in the time series.
+Our current model assumes that data is homoscedastic, i.e. variability is constant with time. The time series above exhibits heteroscedasticity as with time the time series variability increases.
+
+
+##### Using Boxplot see any seasonal effects and futher analyse 
+```{r}
+boxplot(AirPassengers~cycle(AirPassengers),xlab="Date", ylab = "Passenger Numbers" ,main ="Air Passengers Boxplot from 1949 to 1961")
+
+```
+
+##### Further observation:
+
+- Every year, the number of passengers increases, which could be a sign of a rising linear trend. This might be due to various factors such as rise in demand for air travel. 
+
+- secondly, looking at the boxplot we can observe that the number of passengers travelling between June and September (month 6-9) has higher  means and variances compared to other months. But also at the end of each year there is a peak as well. This can clearly indicate seasonality with a apparent cycle of 12 months. One of the explanations for this could be more people taking holidays during the summer and christmas holidays. 
+
+#### 1.1.5 Decomposition of Time Series
+If we `decompose` the TS into trend components and random components, and seasonal components using moving average method.
+
+```{r}
+x= decompose(AirPassengers)
+plot(x)
+
+```
+
+#### observation:
+
+-   We can see a growing trend in the plot, which confirms the pattern found earlier. Also there is a lot of volatility and movement throughout the early and late years. which can suggest the Variance is not stable. Therefore we can either use log or CoxBox Transformation.
+
+```{r}
+x$trend
+x$seasonal
+
+```
+
+Using the above two functions we can see that there is a trend and a seasonality. As we have observed, around summer month more passengers travelling and after the summer months the figures starts to move to the negative figures. For example july being the highest, 63.830808  and Nove being the lowest -53.593434. 
+
+#### 1.1.6 log transformation 
+
+```{r}
+AirPassengersLog = log(AirPassengers)
+plot(AirPassengersLog)
+
+```
+
+However we can also use `CoxBox` to Stabilising the Variance.
+
+
+```{r}
+library(forecast)
+
+lambda = BoxCox.lambda(AirPassengers)
+lambda
+AirPassengersBC = BoxCox(AirPassengers,lambda)
+plot(AirPassengersBC)
+
+```
+ 
+In both plots we see that the increasing variance seems a little lower. 
+ 
+Both Box-Cox transformation and log transformation can reach similar outcomes. And both outcomes are valuable for transforming data in statistical analysis. If you want to use CoxBox or Log this will depend on the specific characteristics of the data and the goals of the analysis. The Box-Cox transformation offers more flexibility and can accommodate a wider range of transformations, while the log transformation is simpler and more straightforward to implement. Therefore for my set of data it will be easier and more suitable to use Log transformation.
+
+
+### 1.2 Minimum expectations (Forecasting and prediction):
+
+We need to convert this to a vector of dates. We can use the function yearmon() from the `zoo` library. 
+
+```{r}
+time(AirPassengers)
+library(zoo)
+```
+
+##### Before creating future dates for forecasting, we should understand how does the future prediction work. 
+
+- The function allows forecasting beyond the existing data meaning it facilitates extending the time series beyond the last observed date in the data set.it also allows us to specify the frequency of the future dates, such as daily, weekly, monthly,  depending on the time granularity of your data and forecasting needs. In my case monthly over a period of time.  
+
+```{r}
+AirPassengers.df = data.frame(
+  ds=zoo::as.yearmon(time(AirPassengers)), 
+  y=AirPassengers)
+head(AirPassengers.df)
+str(AirPassengers.df)
+m = prophet::prophet(AirPassengers.df)
+f = prophet::make_future_dataframe(m, periods=8, freq="quarter")
+p = predict(m, f)
+plot(m,p)
+dyplot.prophet(m,p)
+
+```
+Additionally, I decided to plot a `Dyplot` which I used it for creating interactive time series plots allowing me to zoom in/out, pan, and hover over data points to view their values. 
+
+#### Further analysis (linear regression) :
+
+```{r}
+# we can also compute linear regression and plot
+AirPassengers.df = data.frame(y=as.vector(time(AirPassengers)), ds=as.vector(AirPassengers))
+plot(AirPassengers.df$y, AirPassengers.df$ds, type='l')
+model = lm(ds~y, AirPassengers.df)
+lines(AirPassengers.df$y, fitted(model), type='l', col='red')
+summary(model)
+```
+
+Running a linear regression we have gained some further understanding of the growth of the series. 
+
+Looking at the outputs, the Number of Passengers (y) can be calculated  using the equation:
+
+y = -62055.907  + 31.886 * \mu  + ϵ
+
+As we can see there is a strong  relationship between variable x and y (ds and y) as the time increases the number of passengers also increases. we can also make predictions based on the fitted model. But it does not tell us anything about the seasonality, therefore it might not be the best model to fit as it doesn’t capture the seasonality and multiplicative effects over
+
+### Forecasting ahead using Holt Winters Method. 
+
+```{r}
+H =HoltWinters(AirPassengers, seasonal = "multiplicative")
+plot(H)
+```
+
+The Holt-Winters graph, helps with smoothing the ts plot, allowing us to assess the fit of the Holt-Winters forecasting model to the observed data. It also shows the performance of the model while capturing the underlying patterns and trends in the time series data. This includes, observed data, fitted values, trends, seasonal and residuals.  
+
+```{r}
+library(mosaic)
+prediction= predict(H,12)
+plot(H,prediction)
+msummary(AirPassengers)
+```
+
+When we plot the prediction, in the next year there still will be seasonality with higher peak.  And it will  still impact the number of air passengers 
+
+### Breusch-Pagan ( Further research ) 
+
+#### (Note: In this section, I wanted to further explore and Learn something new) 
+
+##### What is it used for? 
+
+- The Breusch-Pagan test is usually used to assess the variance of the errors which we also know it as residuals, from a regression model is constant (homoscedasticity) or varies with the independent variables (heteroscedasticity). 
+
+##### How does it work? 
+
+- Having a null hypothesis. Which is the variance of the errors is constant across all levels of the independent variables (homoscedasticity).
+
+- Using ordinary least squares to check if the regression model is fitted to the data. 
+
+- Compute Residuals: calculate the Residuals 
+
+- Heteroscedasticity : checking if there is a relationship between the squared residuals and the independent variables our model. 
+
+- Interpretation of p-vlaue: if it is under a chosen sl, it could mean that the null hypothesis was not met , and there is evidence of heteroscedasticity in the regression model.
+
+
+Lets assume that our null= homoscedasticity in our data. Let our SL=  5% then if we have p>0.05 we do not reject null. 
+
+```{r}
+library(lmtest)
+data(AirPassengers.df)
+
+bp <- bptest(model)
+print(bp)
+
+```
+Running the above code we get p= 4.559e-07 is way less than 0.05. This clearly means that the residual does not have constant variance.  Furthermore, our data is heteroskedastic. And we also reject the null hypothesis.
+
+##### Note: previously I used Log and CoxBox transformation because we observed that the Variance was not stable, therefore the Breusch-Pagan test further supported my observation.  
